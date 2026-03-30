@@ -211,6 +211,10 @@ const tools: Tool[] = [
           type: 'array',
           items: { type: 'string' },
           description: 'Tags for the entry'
+        },
+        billable: {
+          type: 'boolean',
+          description: 'Whether the time entry is billable (requires Toggl paid plan)'
         }
       }
     },
@@ -570,9 +574,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           args?.description as string | undefined,
           args?.project_id as number | undefined,
           args?.task_id as number | undefined,
-          args?.tags as string[] | undefined
+          args?.tags as string[] | undefined,
+          args?.billable as boolean | undefined
         );
-        
+
         await ensureCache();
         const hydrated = await cache.hydrateTimeEntries([entry]);
         
