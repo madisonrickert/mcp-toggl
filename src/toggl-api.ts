@@ -9,6 +9,9 @@ import type {
   TimeEntry,
   TimeEntriesRequest,
   CreateTimeEntryRequest,
+  CreateProjectRequest,
+  UpdateProjectRequest,
+  CreateClientRequest,
   UpdateTimeEntryRequest
 } from './types.js';
 
@@ -103,20 +106,37 @@ export class TogglAPI {
   }
   
   // Project methods
-  async getProjects(workspaceId: number): Promise<Project[]> {
-    return this.request<Project[]>('GET', `/workspaces/${workspaceId}/projects`);
+  async getProjects(workspaceId: number, active?: 'true' | 'false' | 'both'): Promise<Project[]> {
+    const query = active ? `?active=${active}` : '?active=both';
+    return this.request<Project[]>('GET', `/workspaces/${workspaceId}/projects${query}`);
   }
-  
-  async getProject(projectId: number): Promise<Project> {
-    // First, we need to find which workspace this project belongs to
-    // This is a limitation of Toggl API v9 - no direct project endpoint
+
+  async getProject(projectId: number, workspaceId?: number): Promise<Project> {
+    if (workspaceId) {
+      return this.request<Project>('GET', `/workspaces/${workspaceId}/projects/${projectId}`);
+    }
+    // Fallback: try each workspace with the direct endpoint
     const workspaces = await this.getWorkspaces();
     for (const workspace of workspaces) {
-      const projects = await this.getProjects(workspace.id);
-      const project = projects.find(p => p.id === projectId);
-      if (project) return project;
+      try {
+        return await this.request<Project>('GET', `/workspaces/${workspace.id}/projects/${projectId}`);
+      } catch {
+        continue;
+      }
     }
     throw new Error(`Project ${projectId} not found`);
+  }
+
+  async createProject(workspaceId: number, project: Omit<CreateProjectRequest, 'workspace_id'>): Promise<Project> {
+    return this.request<Project>('POST', `/workspaces/${workspaceId}/projects`, {
+      ...project,
+      active: project.active ?? true,
+      is_private: project.is_private ?? false,
+    });
+  }
+
+  async updateProject(workspaceId: number, projectId: number, updates: UpdateProjectRequest): Promise<Project> {
+    return this.request<Project>('PUT', `/workspaces/${workspaceId}/projects/${projectId}`, updates);
   }
   
   // Client methods
@@ -139,7 +159,14 @@ export class TogglAPI {
     }
     throw new Error(`Client ${clientId} not found`);
   }
-  
+
+  async createClient(workspaceId: number, client: Omit<CreateClientRequest, 'workspace_id'>): Promise<Client> {
+    return this.request<Client>('POST', `/workspaces/${workspaceId}/clients`, {
+      name: client.name,
+      notes: client.notes,
+    });
+  }
+
   // Task methods
   async getTasks(workspaceId: number, projectId: number): Promise<Task[]> {
     return this.request<Task[]>('GET', `/workspaces/${workspaceId}/projects/${projectId}/tasks`);

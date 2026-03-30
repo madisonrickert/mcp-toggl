@@ -219,6 +219,35 @@ export interface CreateTimeEntryRequest {
   created_with: string;
 }
 
+export interface CreateProjectRequest {
+  name: string;
+  workspace_id: number;
+  client_id?: number;
+  is_private?: boolean;
+  active?: boolean;
+  color?: string;
+  billable?: boolean;
+  auto_estimates?: boolean;
+  estimated_hours?: number;
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  client_id?: number | null;
+  is_private?: boolean;
+  active?: boolean;
+  color?: string;
+  billable?: boolean;
+  auto_estimates?: boolean;
+  estimated_hours?: number;
+}
+
+export interface CreateClientRequest {
+  name: string;
+  workspace_id: number;
+  notes?: string;
+}
+
 export interface UpdateTimeEntryRequest {
   project_id?: number;
   task_id?: number;

@@ -220,6 +220,25 @@ const tools: Tool[] = [
     },
   },
   {
+    name: 'toggl_create_entry',
+    description: 'Create a completed time entry with specific start and stop times',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'Description of the time entry' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' },
+        project_id: { type: 'number', description: 'Project ID' },
+        task_id: { type: 'number', description: 'Task ID' },
+        start: { type: 'string', description: 'Start time in ISO 8601 format (e.g., 2026-02-17T11:30:00-06:00)' },
+        stop: { type: 'string', description: 'Stop time in ISO 8601 format (e.g., 2026-02-17T12:00:00-06:00)' },
+        duration: { type: 'number', description: 'Duration in seconds (alternative to stop -- provide one or the other)' },
+        billable: { type: 'boolean', description: 'Whether the entry is billable (default: false)' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for the entry' },
+      },
+      required: ['start', 'description'],
+    },
+  },
+  {
     name: 'toggl_stop_timer',
     description: 'Stop the currently running timer',
     inputSchema: {
@@ -422,7 +441,89 @@ const tools: Tool[] = [
       }
     },
   },
-  
+  {
+    name: 'toggl_create_client',
+    description: 'Create a new client in a workspace',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Client name' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' },
+        notes: { type: 'string', description: 'Notes about the client' }
+      },
+      required: ['name']
+    },
+  },
+  {
+    name: 'toggl_create_project',
+    description: 'Create a new project in a workspace',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Project name' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' },
+        client_id: { type: 'number', description: 'Client ID to assign the project to' },
+        is_private: { type: 'boolean', description: 'Whether the project is private (default: false)' },
+        active: { type: 'boolean', description: 'Whether the project is active (default: true)' },
+        color: { type: 'string', description: 'Project color (e.g., "#06aaf5")' },
+        billable: { type: 'boolean', description: 'Whether the project is billable' },
+        estimated_hours: { type: 'number', description: 'Estimated hours for the project' }
+      },
+      required: ['name']
+    },
+  },
+  {
+    name: 'toggl_update_project',
+    description: 'Update an existing project (rename, change client, archive, etc.)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'number', description: 'Project ID to update' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' },
+        name: { type: 'string', description: 'New project name' },
+        client_id: { type: 'number', description: 'New client ID (use null to remove client assignment)' },
+        active: { type: 'boolean', description: 'Set to false to archive the project' },
+        is_private: { type: 'boolean', description: 'Whether the project is private' },
+        color: { type: 'string', description: 'Project color (e.g., "#06aaf5")' },
+        billable: { type: 'boolean', description: 'Whether the project is billable' },
+        estimated_hours: { type: 'number', description: 'Estimated hours for the project' }
+      },
+      required: ['project_id']
+    },
+  },
+  {
+    name: 'toggl_update_time_entry',
+    description: 'Update an existing time entry (change project, description, tags, times, etc.)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        time_entry_id: { type: 'number', description: 'Time entry ID to update' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' },
+        description: { type: 'string', description: 'New description' },
+        project_id: { type: 'number', description: 'New project ID' },
+        task_id: { type: 'number', description: 'New task ID' },
+        billable: { type: 'boolean', description: 'Whether the entry is billable' },
+        start: { type: 'string', description: 'New start time (ISO 8601 format)' },
+        stop: { type: 'string', description: 'New stop time (ISO 8601 format)' },
+        duration: { type: 'number', description: 'New duration in seconds' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'New tags (replaces existing tags)' }
+      },
+      required: ['time_entry_id']
+    },
+  },
+  {
+    name: 'toggl_delete_time_entry',
+    description: 'Delete a time entry',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        time_entry_id: { type: 'number', description: 'Time entry ID to delete' },
+        workspace_id: { type: 'number', description: 'Workspace ID (uses default if not provided)' }
+      },
+      required: ['time_entry_id']
+    },
+  },
+
   // Cache management
   {
     name: 'toggl_warm_cache',
@@ -580,19 +681,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         await ensureCache();
         const hydrated = await cache.hydrateTimeEntries([entry]);
-        
+
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ 
+            text: JSON.stringify({
               success: true,
               message: 'Timer started',
-              entry: hydrated[0] 
+              entry: hydrated[0]
             }, null, 2)
           }]
         };
       }
-      
+
+      case 'toggl_create_entry': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.start) {
+          throw new Error('start is required (ISO 8601 format)');
+        }
+
+        let stop = args?.stop as string | undefined;
+        let duration = args?.duration as number | undefined;
+
+        if (stop && !duration) {
+          duration = Math.ceil((new Date(stop as string).getTime() - new Date(args.start as string).getTime()) / 1000);
+        } else if (duration && !stop) {
+          stop = new Date(new Date(args.start as string).getTime() + (duration * 1000)).toISOString();
+        } else if (!stop && !duration) {
+          throw new Error('Either stop or duration is required');
+        }
+
+        const entry = await api.createTimeEntry(workspaceId as number, {
+          description: args.description as string,
+          start: args.start as string,
+          stop,
+          duration,
+          project_id: args?.project_id as number | undefined,
+          task_id: args?.task_id as number | undefined,
+          billable: args?.billable as boolean | undefined,
+          tags: args?.tags as string[] | undefined,
+        });
+
+        await ensureCache();
+        const hydrated = await cache.hydrateTimeEntries([entry]);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'Time entry created',
+              entry: hydrated[0]
+            }, null, 2)
+          }]
+        };
+      }
+
       case 'toggl_stop_timer': {
         const current = await api.getCurrentTimeEntry();
         
@@ -940,7 +1087,194 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }]
         };
       }
-      
+
+      case 'toggl_create_client': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.name) {
+          throw new Error('Client name is required');
+        }
+
+        const newClient = await api.createClient(workspaceId as number, {
+          name: args.name as string,
+          notes: args?.notes as string | undefined,
+        });
+
+        cache.clearCache();
+        cacheWarmed = false;
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Client "${newClient.name}" created`,
+              client: {
+                id: newClient.id,
+                name: newClient.name,
+                workspace_id: newClient.workspace_id,
+                notes: newClient.notes,
+              }
+            }, null, 2)
+          }]
+        };
+      }
+
+      case 'toggl_create_project': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.name) {
+          throw new Error('Project name is required');
+        }
+
+        const project = await api.createProject(workspaceId as number, {
+          name: args.name as string,
+          client_id: args?.client_id as number | undefined,
+          is_private: args?.is_private as boolean | undefined,
+          active: args?.active as boolean | undefined,
+          color: args?.color as string | undefined,
+          billable: args?.billable as boolean | undefined,
+          estimated_hours: args?.estimated_hours as number | undefined,
+        });
+
+        cache.clearCache();
+        cacheWarmed = false;
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Project "${project.name}" created`,
+              project: {
+                id: project.id,
+                name: project.name,
+                workspace_id: project.workspace_id,
+                client_id: project.client_id,
+                active: project.active,
+                billable: project.billable,
+                color: project.color,
+                is_private: project.is_private,
+              }
+            }, null, 2)
+          }]
+        };
+      }
+
+      case 'toggl_update_project': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.project_id) {
+          throw new Error('Project ID is required');
+        }
+
+        const updates: Record<string, any> = {};
+        if (args?.name !== undefined) updates.name = args.name;
+        if (args?.client_id !== undefined) updates.client_id = args.client_id;
+        if (args?.active !== undefined) updates.active = args.active;
+        if (args?.is_private !== undefined) updates.is_private = args.is_private;
+        if (args?.color !== undefined) updates.color = args.color;
+        if (args?.billable !== undefined) updates.billable = args.billable;
+        if (args?.estimated_hours !== undefined) updates.estimated_hours = args.estimated_hours;
+
+        const updatedProject = await api.updateProject(
+          workspaceId as number,
+          args.project_id as number,
+          updates
+        );
+
+        cache.clearCache();
+        cacheWarmed = false;
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Project "${updatedProject.name}" updated`,
+              project: {
+                id: updatedProject.id,
+                name: updatedProject.name,
+                workspace_id: updatedProject.workspace_id,
+                client_id: updatedProject.client_id,
+                active: updatedProject.active,
+                billable: updatedProject.billable,
+                color: updatedProject.color,
+                is_private: updatedProject.is_private,
+              }
+            }, null, 2)
+          }]
+        };
+      }
+
+      case 'toggl_update_time_entry': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.time_entry_id) {
+          throw new Error('Time entry ID is required');
+        }
+
+        const entryUpdates: Record<string, any> = {};
+        if (args?.description !== undefined) entryUpdates.description = args.description;
+        if (args?.project_id !== undefined) entryUpdates.project_id = args.project_id;
+        if (args?.task_id !== undefined) entryUpdates.task_id = args.task_id;
+        if (args?.billable !== undefined) entryUpdates.billable = args.billable;
+        if (args?.start !== undefined) entryUpdates.start = args.start;
+        if (args?.stop !== undefined) entryUpdates.stop = args.stop;
+        if (args?.duration !== undefined) entryUpdates.duration = args.duration;
+        if (args?.tags !== undefined) entryUpdates.tags = args.tags;
+
+        const updatedEntry = await api.updateTimeEntry(
+          workspaceId as number,
+          args.time_entry_id as number,
+          entryUpdates
+        );
+
+        await ensureCache();
+        const hydrated = await cache.hydrateTimeEntries([updatedEntry]);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'Time entry updated',
+              entry: hydrated[0]
+            }, null, 2)
+          }]
+        };
+      }
+
+      case 'toggl_delete_time_entry': {
+        const workspaceId = args?.workspace_id || defaultWorkspaceId;
+        if (!workspaceId) {
+          throw new Error('Workspace ID required (set TOGGL_DEFAULT_WORKSPACE_ID or provide workspace_id)');
+        }
+        if (!args?.time_entry_id) {
+          throw new Error('Time entry ID is required');
+        }
+
+        await api.deleteTimeEntry(workspaceId as number, args.time_entry_id as number);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Time entry ${args.time_entry_id} deleted`
+            }, null, 2)
+          }]
+        };
+      }
+
       // Cache management
       case 'toggl_warm_cache': {
         const workspaceId = (args?.workspace_id as number | undefined) || defaultWorkspaceId;
