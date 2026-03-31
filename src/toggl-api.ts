@@ -67,7 +67,12 @@ export class TogglAPI {
               `Server response: ${text}`
             );
           }
-          throw new Error(`Toggl API error (${response.status}): ${text}`);
+          const err = new Error(`Toggl API error (${response.status}): ${text}`);
+          // Only retry on server errors (5xx); client errors (4xx) won't succeed on retry
+          if (response.status >= 400 && response.status < 500) {
+            throw Object.assign(err, { noRetry: true });
+          }
+          throw err;
         }
         
         // Handle 204 No Content
@@ -76,9 +81,9 @@ export class TogglAPI {
         }
         
         return await response.json() as T;
-      } catch (error) {
-        if (i === retries - 1) throw error;
-        // Exponential backoff
+      } catch (error: any) {
+        if (error?.noRetry || i === retries - 1) throw error;
+        // Exponential backoff for transient/network errors
         await new Promise(resolve => setTimeout(resolve, (i + 1) * 1000));
       }
     }
