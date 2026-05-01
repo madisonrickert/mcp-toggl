@@ -69,11 +69,14 @@ export class CacheManager {
     return null;
   }
 
+  private cacheBucketLimit(): number {
+    return Math.max(1, Math.ceil(this.config.maxSize / 6));
+  }
+
   // Generic cache setter
   private setCached<T>(cache: Map<number, CacheEntry<T>>, id: number, data: T): void {
-    // Enforce max cache size with LRU eviction
-    if (cache.size >= this.config.maxSize / 6) {
-      // Divide by 6 for each cache type
+    // Enforce per-cache bucket size using insertion-order eviction.
+    if (!cache.has(id) && cache.size >= this.cacheBucketLimit()) {
       const firstKey = cache.keys().next().value;
       if (firstKey !== undefined) {
         cache.delete(firstKey);
@@ -87,12 +90,36 @@ export class CacheManager {
     });
   }
 
-  private setCachedCollection<T>(data: T[]): CacheEntry<T[]> {
-    return {
+  private setCachedCollection<T>(cache: Map<number, CacheEntry<T[]>>, id: number, data: T[]): void {
+    const limit = this.cacheBucketLimit();
+    if (data.length > limit) {
+      cache.delete(id);
+      return;
+    }
+
+    if (!cache.has(id) && cache.size >= limit) {
+      const firstKey = cache.keys().next().value;
+      if (firstKey !== undefined) {
+        cache.delete(firstKey);
+      }
+    }
+
+    cache.set(id, {
       data,
       timestamp: new Date(),
       ttl: this.config.ttl,
-    };
+    });
+  }
+
+  private setWorkspaceList(workspaces: Workspace[]): void {
+    this.workspaceList =
+      workspaces.length <= this.cacheBucketLimit()
+        ? {
+            data: workspaces,
+            timestamp: new Date(),
+            ttl: this.config.ttl,
+          }
+        : null;
   }
 
   // Workspace methods
@@ -127,7 +154,7 @@ export class CacheManager {
       workspaces.forEach((ws: Workspace) => {
         this.setCached(this.workspaces, ws.id, ws);
       });
-      this.workspaceList = this.setCachedCollection(workspaces);
+      this.setWorkspaceList(workspaces);
       return workspaces;
     } catch (error) {
       console.error('Failed to fetch workspaces:', error);
@@ -171,7 +198,7 @@ export class CacheManager {
       projects.forEach((proj: Project) => {
         this.setCached(this.projects, proj.id, proj);
       });
-      this.projectsByWorkspace.set(workspaceId, this.setCachedCollection(projects));
+      this.setCachedCollection(this.projectsByWorkspace, workspaceId, projects);
       return projects;
     } catch (error) {
       console.error(`Failed to fetch projects for workspace ${workspaceId}:`, error);
@@ -215,7 +242,7 @@ export class CacheManager {
       clients.forEach((client: Client) => {
         this.setCached(this.clients, client.id, client);
       });
-      this.clientsByWorkspace.set(workspaceId, this.setCachedCollection(clients));
+      this.setCachedCollection(this.clientsByWorkspace, workspaceId, clients);
       return clients;
     } catch (error) {
       console.error(`Failed to fetch clients for workspace ${workspaceId}:`, error);
@@ -305,7 +332,7 @@ export class CacheManager {
       tags.forEach((tag: Tag) => {
         this.setCached(this.tags, tag.id, tag);
       });
-      this.tagsByWorkspace.set(workspaceId, this.setCachedCollection(tags));
+      this.setCachedCollection(this.tagsByWorkspace, workspaceId, tags);
       return tags;
     } catch (error) {
       console.error(`Failed to fetch tags for workspace ${workspaceId}:`, error);
