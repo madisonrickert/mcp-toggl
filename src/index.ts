@@ -301,7 +301,7 @@ const tools: Tool[] = [
         billable: {
           type: 'boolean',
           description:
-            'Whether the entry is billable. If omitted, Toggl applies the project default.',
+            'Whether the entry is billable. If omitted, Toggl applies the project default. Note: some Toggl plans (Free) ignore this flag and treat the entry as non-billable.',
         },
       },
     },
@@ -363,7 +363,7 @@ const tools: Tool[] = [
         billable: {
           type: 'boolean',
           description:
-            'Whether the entry is billable. If omitted, Toggl applies the project default.',
+            'Whether the entry is billable. If omitted, Toggl applies the project default. Note: some Toggl plans (Free) ignore this flag and treat the entry as non-billable.',
         },
         workspace_id: {
           type: 'number',
@@ -400,7 +400,11 @@ const tools: Tool[] = [
           items: { type: 'number' },
           description: 'Tag IDs (alternative to tags); replaces existing tags on the entry',
         },
-        billable: { type: 'boolean' },
+        billable: {
+          type: 'boolean',
+          description:
+            'Whether the entry is billable. Note: some Toggl plans (Free) ignore this flag and treat the entry as non-billable.',
+        },
         start: { type: 'string', description: 'ISO 8601 datetime' },
         stop: { type: 'string', description: 'ISO 8601 datetime' },
         duration: { type: 'number', description: 'Duration in seconds' },
