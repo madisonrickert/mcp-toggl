@@ -293,13 +293,15 @@ export class TogglAPI {
     description?: string,
     projectId?: number,
     taskId?: number,
-    tags?: string[]
+    tags?: string[],
+    billable?: boolean
   ): Promise<TimeEntry> {
     const entry: Partial<CreateTimeEntryRequest> = {
       description,
       project_id: projectId,
       task_id: taskId,
       tags,
+      billable,
       start: new Date().toISOString(),
       duration: -1, // Negative duration indicates running timer
     };

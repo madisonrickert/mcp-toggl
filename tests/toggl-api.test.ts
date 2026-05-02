@@ -91,3 +91,128 @@ describe('toggl api errors', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('toggl api time entry CRUD', () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it('POSTs to the workspace time_entries endpoint with start, billable, and created_with', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: {
+          id: 100,
+          workspace_id: 1,
+          start: '2026-05-01T09:00:00Z',
+          stop: '2026-05-01T10:00:00Z',
+          duration: 3600,
+          description: 'Focused work',
+          billable: true,
+        },
+      })
+    );
+
+    const api = new TogglAPI('token');
+    const entry = await api.createTimeEntry(1, {
+      start: '2026-05-01T09:00:00Z',
+      stop: '2026-05-01T10:00:00Z',
+      duration: 3600,
+      description: 'Focused work',
+      billable: true,
+    });
+
+    expect(entry.id).toBe(100);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/time_entries');
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      workspace_id: 1,
+      created_with: 'mcp-toggl',
+      start: '2026-05-01T09:00:00Z',
+      stop: '2026-05-01T10:00:00Z',
+      duration: 3600,
+      description: 'Focused work',
+      billable: true,
+    });
+  });
+
+  it('PUTs to the single time_entry endpoint with only the supplied update fields', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: {
+          id: 100,
+          workspace_id: 1,
+          start: '2026-05-01T09:00:00Z',
+          duration: 3600,
+          project_id: 50,
+          description: 'Categorized',
+        },
+      })
+    );
+
+    const api = new TogglAPI('token');
+    const entry = await api.updateTimeEntry(1, 100, {
+      project_id: 50,
+      description: 'Categorized',
+    });
+
+    expect(entry.id).toBe(100);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/time_entries/100');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({ project_id: 50, description: 'Categorized' });
+  });
+
+  it('DELETEs the single time_entry endpoint without a body', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, contentLength: '0', text: '' }));
+
+    const api = new TogglAPI('token');
+    await api.deleteTimeEntry(1, 100);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/time_entries/100');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('passes billable through startTimer to the underlying createTimeEntry payload', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: {
+          id: 101,
+          workspace_id: 1,
+          start: '2026-05-01T09:00:00Z',
+          duration: -1,
+          billable: true,
+        },
+      })
+    );
+
+    const api = new TogglAPI('token');
+    await api.startTimer(1, 'Working', undefined, undefined, undefined, true);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      description: 'Working',
+      billable: true,
+      duration: -1,
+    });
+  });
+
+  it('does not retry create on 4xx client errors', async () => {
+    fetchMock.mockResolvedValue(
+      response({ status: 400, text: 'start cannot be in the future for completed entries' })
+    );
+
+    const api = new TogglAPI('token');
+    await expect(
+      api.createTimeEntry(1, { start: '2050-01-01T00:00:00Z', duration: 60 })
+    ).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
