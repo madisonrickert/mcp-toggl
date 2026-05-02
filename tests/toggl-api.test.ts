@@ -91,3 +91,65 @@ describe('toggl api errors', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+describe('toggl api tag CRUD', () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it('POSTs to the workspace tags endpoint with the new name', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: { id: 30, workspace_id: 1, name: 'automated' },
+      })
+    );
+
+    const api = new TogglAPI('token');
+    const tag = await api.createTag(1, 'automated');
+
+    expect(tag).toEqual({ id: 30, workspace_id: 1, name: 'automated' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/tags');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ name: 'automated' });
+  });
+
+  it('PUTs to the single-tag endpoint with the new name', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: { id: 30, workspace_id: 1, name: 'manual' },
+      })
+    );
+
+    const api = new TogglAPI('token');
+    const tag = await api.updateTag(1, 30, 'manual');
+
+    expect(tag).toEqual({ id: 30, workspace_id: 1, name: 'manual' });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/tags/30');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({ name: 'manual' });
+  });
+
+  it('DELETEs the single-tag endpoint without a body', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, json: {} }));
+
+    const api = new TogglAPI('token');
+    await api.deleteTag(1, 30);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.track.toggl.com/api/v9/workspaces/1/tags/30');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('does not retry tag CRUD on 4xx client errors', async () => {
+    fetchMock.mockResolvedValue(response({ status: 400, text: 'Tag name already exists' }));
+
+    const api = new TogglAPI('token');
+    await expect(api.createTag(1, 'duplicate')).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
