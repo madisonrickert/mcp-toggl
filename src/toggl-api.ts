@@ -11,6 +11,8 @@ import type {
   TimeEntriesRequest,
   CreateTimeEntryRequest,
   UpdateTimeEntryRequest,
+  CreateClientRequest,
+  UpdateClientRequest,
   TimelineEvent,
 } from './types.js';
 
@@ -191,6 +193,26 @@ export class TogglAPI {
   // Client methods
   async getClients(workspaceId: number): Promise<Client[]> {
     return this.request<Client[]>('GET', `/workspaces/${workspaceId}/clients`);
+  }
+
+  async createClient(workspaceId: number, client: CreateClientRequest): Promise<Client> {
+    return this.request<Client>('POST', `/workspaces/${workspaceId}/clients`, client);
+  }
+
+  async updateClient(
+    workspaceId: number,
+    clientId: number,
+    updates: UpdateClientRequest
+  ): Promise<Client> {
+    return this.request<Client>(
+      'PUT',
+      `/workspaces/${workspaceId}/clients/${clientId}`,
+      updates
+    );
+  }
+
+  async deleteClient(workspaceId: number, clientId: number): Promise<void> {
+    await this.request<void>('DELETE', `/workspaces/${workspaceId}/clients/${clientId}`);
   }
 
   async getClient(clientId: number): Promise<Client> {
